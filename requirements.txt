@@ -4,3 +4,4 @@ fastapi
 httpx
 pytest
 uvicorn
+langgraph

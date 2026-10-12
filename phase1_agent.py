@@ -35,7 +35,7 @@ def safe_path(rel: str) -> Path:
     return p
 
 
-def list_files() -> str:
+def list_files(**_ignored) -> str:
     files = []
     for path in WORKSPACE.rglob("*"):
         if path.is_file() and not any(part in SKIP_DIRS for part in path.parts):
@@ -44,13 +44,16 @@ def list_files() -> str:
 
 
 def read_file(path: str) -> str:
-    return safe_path(path).read_text()[:MAX_OUTPUT_CHARS]
+    text = safe_path(path).read_text(encoding="utf-8")
+    if not text.strip():
+        return "(file is empty)"
+    return text[:MAX_OUTPUT_CHARS]
 
 
 def write_file(path: str, content: str) -> str:
     p = safe_path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
+    p.write_text(content, encoding="utf-8")
     return f"wrote {len(content)} chars to {path}"
 
 
