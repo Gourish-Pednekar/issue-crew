@@ -90,10 +90,12 @@ def tool(name, description, properties=None, required=None):
 
 
 TOOLS = [
-    tool("list_files", "List all files in the repository."),
-    tool("read_file", "Read a file's contents.",
+    tool("list_files", "List all files in the repository. Takes no arguments."),
+    tool("read_file", "Read a whole file. Takes only a path; there are no line ranges.",
          {"path": {"type": "string", "description": "relative path"}}, ["path"]),
-    tool("write_file", "Create or overwrite a file with the full new content.",
+    tool("write_file",
+         "Overwrite a file with its COMPLETE new content. Both path and content are "
+         "required; partial edits are not supported.",
          {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
     tool("run_tests", "Run the pytest suite and return the output."),
 ]

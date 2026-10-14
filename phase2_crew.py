@@ -1,13 +1,15 @@
 """Phase 2: Planner -> Coder -> Tester as a LangGraph, with a retry loop.
 
-Run:  python phase2_crew.py "Add pagination to GET /users ..."
+Run (from the issue-crew folder):  python phase2_crew.py "Add pagination ..."
 """
 import json
 import subprocess
 import sys
+import time
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
+from openai import BadRequestError, RateLimitError
 
 # Reuse the client, model, tools and workspace from Phase 1.
 from phase1_agent import MAX_OUTPUT_CHARS, MODEL, TOOL_FUNCS, TOOLS, WORKSPACE, client
@@ -27,6 +29,35 @@ class CrewState(TypedDict):
     steps: int
 
 
+# ---------- guarded LLM call ----------
+
+def call_llm(messages, tools, retries=3):
+    """Call the model, surviving malformed tool calls and rate limits."""
+    for attempt in range(retries):
+        try:
+            return client.chat.completions.create(
+                model=MODEL, messages=messages, tools=tools
+            )
+        except BadRequestError as e:
+            if "tool_use_failed" in str(e):
+                print("    [LLM] malformed tool call; nudging the model and retrying")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Your last tool call was malformed. Check the tool's required "
+                        "parameters (write_file needs both path and content, "
+                        "read_file takes only path) and try again."
+                    ),
+                })
+                continue
+            raise
+        except RateLimitError:
+            wait = 5 * (attempt + 1)
+            print(f"    [LLM] rate limited; waiting {wait}s")
+            time.sleep(wait)
+    raise RuntimeError("LLM call failed after retries")
+
+
 # ---------- a reusable "LLM agent with tools" runner ----------
 
 def tools_named(*names):
@@ -42,7 +73,7 @@ def run_llm_agent(system, user, tool_names, max_steps=8):
     ]
     tokens = 0
     for step in range(1, max_steps + 1):
-        resp = client.chat.completions.create(model=MODEL, messages=messages, tools=tools)
+        resp = call_llm(messages, tools)
         tokens += resp.usage.total_tokens
         msg = resp.choices[0].message
 
@@ -77,25 +108,40 @@ def run_llm_agent(system, user, tool_names, max_steps=8):
     return "(step limit reached)", tokens, max_steps
 
 
+def safe_run(label, system, user, tool_names):
+    """Never let one agent crash the whole graph: a crash becomes a result."""
+    try:
+        return run_llm_agent(system, user, tool_names)
+    except Exception as e:
+        print(f"[{label}] crashed: {e}")
+        return f"(crashed: {e})", 0, 0
+
+
 # ---------- the agents (graph nodes) ----------
 
 PLANNER_SYSTEM = (
-    "You are a software planner. Explore the repo using list_files and read_file. "
-    "Do NOT write code. Reply with a plan of at most 5 short numbered lines: "
-    "which file to change, what to change, and edge cases. No tables, no code blocks."
+    "You are a software planner. Explore the repo using list_files and read_file "
+    "(read_file takes only a path and returns the whole file). "
+    "Do NOT write code and do not include code snippets. "
+    "Reply with a plan of at most 5 short numbered lines: which file to change, "
+    "what to change, and edge cases to handle."
 )
 
 CODER_SYSTEM = (
-    "You are a careful software engineer. Follow the plan and make minimal changes "
-    "using read_file and write_file. You cannot run tests; a separate tester will run "
-    "them. When done, reply with a one-line summary of what you changed."
+    "You are a careful software engineer. Follow the plan and make minimal changes. "
+    "Tools: list_files (no arguments), read_file (path only, returns the whole file), "
+    "write_file (path AND the COMPLETE new file content; there is no partial editing). "
+    "To change a file: read it, then write the full updated file. "
+    "Make sure the Python you write is syntactically valid. "
+    "You cannot run tests; a separate tester will run them. "
+    "When done, reply with a one-line summary of what you changed."
 )
 
 
 def planner(state: CrewState):
     print("\n[PLANNER] exploring the repo...")
-    text, tokens, steps = run_llm_agent(
-        PLANNER_SYSTEM, state["task"], ["list_files", "read_file"]
+    text, tokens, steps = safe_run(
+        "PLANNER", PLANNER_SYSTEM, state["task"], ["list_files", "read_file"]
     )
     print(f"[PLANNER] plan:\n{text}")
     return {
@@ -114,8 +160,8 @@ def coder(state: CrewState):
             "\nYour previous attempt failed the tests. Test output:\n"
             f"{state['test_output']}\nFix the code.\n"
         )
-    text, tokens, steps = run_llm_agent(
-        CODER_SYSTEM, prompt, ["list_files", "read_file", "write_file"]
+    text, tokens, steps = safe_run(
+        "CODER", CODER_SYSTEM, prompt, ["list_files", "read_file", "write_file"]
     )
     print(f"[CODER] {text}")
     return {
@@ -177,7 +223,7 @@ if __name__ == "__main__":
             "tests_passed": False,
             "attempts": 0,
             "tokens": 0,
-            "steps": 0, 
+            "steps": 0,
         }
     )
     status = "SUCCESS" if final["tests_passed"] else "FAILED"
