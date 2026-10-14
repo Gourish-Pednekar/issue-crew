@@ -137,7 +137,7 @@ def run_agent(task: str, max_steps: int = 10) -> None:
 
         if not msg.tool_calls:  # the model is done talking to tools
             print(f"\n=== DONE in {step} steps, {total_tokens} tokens ===\n{msg.content}")
-            return
+            return {"steps": step, "tokens": total_tokens, "finished": True}
 
         for call in msg.tool_calls:
             name = call.function.name
@@ -151,8 +151,9 @@ def run_agent(task: str, max_steps: int = 10) -> None:
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
     print(f"\n=== STOPPED: hit the {max_steps}-step limit, {total_tokens} tokens ===")
-
+    return {"steps": max_steps, "tokens": total_tokens, "finished": False}
 
 if __name__ == "__main__":
     task = sys.argv[1] if len(sys.argv) > 1 else "Make the failing tests pass."
-    run_agent(task)
+    result = run_agent(task)
+    print("RESULT_JSON " + json.dumps(result))

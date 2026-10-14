@@ -4,7 +4,7 @@ Run (from the issue-crew folder):  python phase3_crew.py "<task>"
 """
 import subprocess
 import sys
-
+import json
 from langgraph.graph import END, StateGraph
 
 from phase1_agent import WORKSPACE
@@ -24,7 +24,8 @@ TOKEN_BUDGET = 40000  # Supervisor stops the crew when total tokens reach this
 class ReviewState(CrewState):
     review_feedback: str
     approved: bool
-
+    rejections: int
+    last_review: str
 
 # ---------- helpers ----------
 
@@ -35,8 +36,10 @@ def get_diff() -> str:
         cwd=WORKSPACE, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=30,
     )
+    if proc.returncode != 0:
+        # Fail loudly instead of pretending nothing changed.
+        return f"(git diff FAILED: {proc.stderr.strip()[:200]})"
     return proc.stdout[-6000:] or "(no changes)"
-
 
 def over_budget(state) -> bool:
     return state["tokens"] >= TOKEN_BUDGET
@@ -108,6 +111,8 @@ def reviewer(state: ReviewState):
         "approved": approved,
         "review_feedback": "" if approved else text,
         "tokens": state["tokens"] + tokens,
+        "rejections": state["rejections"] + (0 if approved else 1),
+        "last_review": text[:600],
     }
 
 
@@ -167,6 +172,8 @@ if __name__ == "__main__":
             "steps": 0,
             "review_feedback": "",
             "approved": False,
+            "rejections": 0,
+            "last_review": "",
         }
     )
     ok = final["tests_passed"] and final["approved"]
@@ -180,3 +187,12 @@ if __name__ == "__main__":
         f"\n=== {status} | coder attempts: {final['attempts']} | "
         f"LLM steps: {final['steps']} | tokens: {final['tokens']} / {TOKEN_BUDGET} ==="
     )
+    print("RESULT_JSON " + json.dumps({
+        "tests_passed": final["tests_passed"],
+        "approved": final["approved"],
+        "attempts": final["attempts"],
+        "steps": final["steps"],
+        "tokens": final["tokens"],
+        "rejections": final["rejections"],
+        "last_review": final["last_review"],
+    }))

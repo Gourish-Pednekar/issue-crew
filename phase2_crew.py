@@ -31,7 +31,7 @@ class CrewState(TypedDict):
 
 # ---------- guarded LLM call ----------
 
-def call_llm(messages, tools, retries=3):
+def call_llm(messages, tools, retries=6):
     """Call the model, surviving malformed tool calls and rate limits."""
     for attempt in range(retries):
         try:
@@ -52,12 +52,18 @@ def call_llm(messages, tools, retries=3):
                 })
                 continue
             raise
-        except RateLimitError:
-            wait = 5 * (attempt + 1)
-            print(f"    [LLM] rate limited; waiting {wait}s")
+        except RateLimitError as e:
+            if "per day" in str(e).lower():
+                # Waiting won't help: the daily quota is used up.
+                raise RuntimeError("DAILY_TOKEN_LIMIT: " + str(e)[:200]) from e
+            wait = 15 * (attempt + 1)
+            try:
+                wait = max(wait, float(e.response.headers.get("retry-after", 0)) + 1)
+            except (TypeError, ValueError):
+                pass
+            print(f"    [LLM] rate limited; waiting {wait:.0f}s")
             time.sleep(wait)
     raise RuntimeError("LLM call failed after retries")
-
 
 # ---------- a reusable "LLM agent with tools" runner ----------
 
@@ -227,3 +233,10 @@ if __name__ == "__main__":
         f"\n=== {status} | coder attempts: {final['attempts']} | "
         f"LLM steps: {final['steps']} | tokens: {final['tokens']} ==="
     )
+    print("RESULT_JSON " + json.dumps({
+        "tests_passed": final["tests_passed"],
+        "approved": None,  # Phase 2 has no reviewer
+        "attempts": final["attempts"],
+        "steps": final["steps"],
+        "tokens": final["tokens"],
+    }))

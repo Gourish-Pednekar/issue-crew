@@ -1,0 +1,14 @@
+[
+  {
+    "id": "01-validation",
+    "prompt": "Make all tests in tests/test_users.py pass. Invalid page or limit values must be rejected with 422, and the response must include an X-Total-Count header."
+  },
+  {
+    "id": "02-slugify",
+    "prompt": "Implement slugify(text) in app/text_utils.py so that all tests in tests/test_text_utils.py pass. Do not modify the tests."
+  },
+  {
+    "id": "03-cart-bugs",
+    "prompt": "The shopping cart in app/cart.py has bugs. Fix them so all tests in tests/test_cart.py pass, including rejecting discount percentages above 100 with a ValueError. Do not modify the tests."
+  }
+]
