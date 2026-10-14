@@ -46,12 +46,14 @@ def over_budget(state) -> bool:
 
 REVIEWER_SYSTEM = (
     "You are a strict but fair code reviewer. You are given a task, a plan and a git diff. "
-    "Check: does the diff fulfil the task, is it minimal and readable, is the Python valid, "
-    "are inputs validated sensibly, and does it avoid hacks such as hardcoding values just "
-    "to satisfy tests? Your first line must be EXACTLY 'VERDICT: APPROVE' or "
-    "'VERDICT: REJECT'. If you reject, add at most 5 short lines of concrete fixes."
+    "Answer in exactly this format:\n"
+    "1. Task met: PASS or FAIL, with one short reason\n"
+    "2. Valid, readable Python: PASS or FAIL, with one short reason\n"
+    "3. Hacks (hardcoded values, special-casing test inputs): PASS or FAIL, with one short reason\n"
+    "4. Validation and edge cases: PASS or FAIL, with one short reason\n"
+    "Last line: exactly 'VERDICT: APPROVE' or 'VERDICT: REJECT'. "
+    "Reject if any check fails, and name the concrete fix."
 )
-
 
 def coder(state: ReviewState):
     attempt = state["attempts"] + 1
@@ -99,7 +101,8 @@ def reviewer(state: ReviewState):
         print(f"[REVIEWER] crashed: {e}")
         text, tokens = "VERDICT: REJECT\nReviewer was unavailable; re-check your work.", 0
 
-    approved = "VERDICT: APPROVE" in text.upper()
+    verdict_lines = [l for l in text.upper().splitlines() if l.strip().startswith("VERDICT:")]
+    approved = bool(verdict_lines) and "APPROVE" in verdict_lines[-1]
     print(f"[REVIEWER] {'APPROVED' if approved else 'REJECTED'}\n{text}")
     return {
         "approved": approved,

@@ -77,8 +77,11 @@ numbers as anecdotes until the evaluation harness (Phase 5) runs each task many 
   until the LLM call was guarded and crashes were turned into results.
 - A bug found on Windows: files must be read and written as UTF-8, or the model's
   special characters raise an encoding error.
-- Known gap: the Reviewer has not yet been tested against patches that pass the
-  tests but are hacks (such as hardcoded values). That check is planned.
+- The Reviewer was tested on 2 hand-written patches: it approved a clean one and
+  rejected a hack that special-cased the tested inputs (`page == 0`, `limit == 101`),
+  with accurate reasons. It did not explicitly flag the hardcoded `X-Total-Count`
+  value as a hack. Two samples is too few; a larger set of bad patches is planned
+  for Phase 5.
 
 ## Quickstart
 
