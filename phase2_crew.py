@@ -13,7 +13,7 @@ from openai import BadRequestError, RateLimitError
 
 # Reuse the client, model, tools and workspace from Phase 1.
 from phase1_agent import MAX_OUTPUT_CHARS, MODEL, TOOL_FUNCS, TOOLS, WORKSPACE, client
-
+from sandbox import run_pytest
 MAX_ATTEMPTS = 3  # how many times the Coder may try before we give up
 
 
@@ -173,14 +173,9 @@ def coder(state: CrewState):
 
 
 def tester(state: CrewState):
-    """No LLM here: run pytest and trust the exit code."""
-    print("\n[TESTER] running pytest...")
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--tb=short"],
-        cwd=WORKSPACE, capture_output=True, text=True, timeout=60,
-    )
-    output = (proc.stdout + proc.stderr)[-MAX_OUTPUT_CHARS:]
-    passed = proc.returncode == 0
+    """No LLM here: run pytest inside the Docker sandbox and trust the result."""
+    print("\n[TESTER] running pytest in the Docker sandbox...")
+    passed, output = run_pytest(WORKSPACE)
     print(f"[TESTER] {'PASSED' if passed else 'FAILED'}")
     return {"tests_passed": passed, "test_output": "" if passed else output}
 

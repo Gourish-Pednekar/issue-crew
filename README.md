@@ -5,7 +5,7 @@ and has the diff reviewed. The end goal is a crew that reads a GitHub issue and
 opens a pull request. Built from scratch to learn agent orchestration,
 evaluation, and cloud deployment.
 
-> **Status: work in progress.** Phases 1-3 are complete. See the roadmap below.
+> **Status: work in progress.** Phases 1-4 are complete. See the roadmap below.
 
 ## Why this project
 
@@ -46,7 +46,7 @@ Step Functions and CloudWatch for orchestration and observability.
 - [x] **Phase 1:** single agent with a hand-written tool-calling loop
 - [x] **Phase 2:** Planner / Coder / Tester as a LangGraph with a retry loop
 - [x] **Phase 3:** Reviewer + Supervisor, retry and token-budget limits
-- [ ] **Phase 4:** Docker sandbox for running tests safely
+- [x] **Phase 4:** Docker sandbox for running tests safely
 - [ ] **Phase 5:** evaluation harness (15-20 tasks, several runs each, single vs multi-agent)
 - [ ] **Phase 6:** GitHub integration (read issues, open PRs)
 - [ ] **Phase 7:** AWS serverless deployment and observability
@@ -63,6 +63,7 @@ numbers as anecdotes until the evaluation harness (Phase 5) runs each task many 
 | Add pagination to `GET /users`     | Crew v1 (Planner/Coder/Tester)   | 1              | 12    | 9,568  | 3/3 tests pass                    |
 | Validation (422) + `X-Total-Count` | Crew v1 (Planner/Coder/Tester)   | 1              | 10    | 8,470  | 7/7 tests pass                    |
 | Validation (422) + `X-Total-Count` | Crew v2 (+ Reviewer, Supervisor) | 2              | 15    | 16,626 | 7/7 tests pass, reviewer approved |
+| Validation (422) + `X-Total-Count` | Crew v2 + Docker sandbox         | 2              | 16    | 20,078 | 7/7 tests pass, reviewer approved |
 
 ## What I've learned so far
 
@@ -70,9 +71,13 @@ numbers as anecdotes until the evaluation harness (Phase 5) runs each task many 
   single agent for the same outcome. Multi-agent is not automatically better.
 - The same crew on the same task cost 8.5k tokens in one run and 16.6k in another
   (a failed first attempt followed by a retry), so a single run says little.
-- The Planner sometimes wrote invalid Python into its plan (a parameter without a
-  default after one with a default), which broke the Coder's first attempt. The
-  Tester caught it and the retry loop fixed it.
+- In several runs of the validation task, the Planner wrote invalid Python into its
+  plan (a parameter without a default after one with a default). The Coder copied
+  it, the first attempt failed, and the Tester-driven retry fixed it. This looks like
+  a systematic weakness of plans that contain code, to be tested in Phase 5.
+- Tests now run in a Docker sandbox (no network, 512 MB memory, 1 CPU, 128 processes,
+  only the target repo mounted). I verified the isolation: a container started with
+  `--network none` cannot resolve any hostname.
 - The model call itself can fail: a malformed tool call crashed the whole graph
   until the LLM call was guarded and crashes were turned into results.
 - A bug found on Windows: files must be read and written as UTF-8, or the model's
@@ -92,6 +97,7 @@ cd issue-crew
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env    # then fill in your Groq key and the WORKSPACE path
+docker build -t issue-crew-sandbox sandbox   # needs Docker Desktop running
 ```
 
 Put the target repo at its failing baseline first (see the
@@ -110,8 +116,10 @@ python phase3_crew.py "Make all tests in tests/test_users.py pass. Invalid page 
 
 ## Safety note
 
-The agents write code and run `pytest` on your machine. They are **not sandboxed
-yet** (Docker isolation is planned for Phase 4), so only point them at repos you
+In the Phase 2 and 3 crews, `pytest` runs inside a Docker container with no network
+access and CPU, memory and process limits. Limits of this setup: the target repo is
+mounted read-write, the containers share the host kernel, and the Phase 1 single
+agent still runs its tests directly on the host. Only point the agents at repos you
 trust.
 
 ## License
