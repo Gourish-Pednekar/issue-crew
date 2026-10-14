@@ -35,8 +35,9 @@ def call_llm(messages, tools, retries=3):
     """Call the model, surviving malformed tool calls and rate limits."""
     for attempt in range(retries):
         try:
+            kwargs = {"tools": tools} if tools else {}
             return client.chat.completions.create(
-                model=MODEL, messages=messages, tools=tools
+                model=MODEL, messages=messages, **kwargs
             )
         except BadRequestError as e:
             if "tool_use_failed" in str(e):
