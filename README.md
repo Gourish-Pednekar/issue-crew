@@ -1,11 +1,11 @@
 # Issue-to-PR: a multi-agent engineering crew
 
-An AI crew that takes a task, plans the change, writes the code, runs the tests,
-and has the diff reviewed. The end goal is a crew that reads a GitHub issue and
-opens a pull request. Built from scratch to learn agent orchestration,
-evaluation, and cloud deployment.
+An AI crew that reads a task or a GitHub issue, plans the change, writes the code,
+runs the tests in a Docker sandbox, has the diff reviewed, and opens a pull request.
+Built from scratch to learn agent orchestration, evaluation, and cloud deployment.
 
-> **Status: work in progress.** Phases 1-5 are complete. See the roadmap below.
+> **Status: work in progress.** Phases 1-6 are complete. Phase 7 (AWS deployment)
+> is next. See the roadmap below.
 
 ## Why this project
 
@@ -13,7 +13,7 @@ Most agent demos never measure anything. This one is built around an evaluation
 harness: every change to the crew is judged by resolve rate, tokens per task and
 number of steps, and the multi-agent design is compared against a single agent.
 
-## Architecture (implemented in Phase 3)
+## Architecture
 
 ```
                 +---------+     +-------+     +--------+
@@ -31,15 +31,27 @@ number of steps, and the multi-agent design is compared against a single agent.
 
 - **Planner**: read-only tools (`list_files`, `read_file`); produces a short plan.
 - **Coder**: can read and write files; gets test failures or reviewer feedback on retries.
-- **Tester**: no LLM. Runs `pytest` and trusts the exit code.
+- **Tester**: no LLM. Runs `pytest` in the Docker sandbox and trusts the exit code.
 - **Reviewer**: no tools. Reads the `git diff` and returns APPROVE or REJECT.
 - **Supervisor**: plain Python routing, with attempt and token limits.
 - Each agent only gets the tools it needs, and the LLM call is guarded against
   malformed tool calls and rate limits.
 
+### GitHub integration (Phase 6)
+
+```
+ GitHub issue --> issue_to_pr.py --> clone target repo to a temp dir
+                                 --> new branch crew/issue-<n>-<timestamp>
+                                 --> run the crew (phase3_crew.py)
+                                 --> safety checks
+                                 --> commit, push, open PR ("Closes #n")
+                                 --> comment the result on the issue
+```
+
 Planned AWS (free-tier) deployment: API Gateway/Lambda (webhook) -> SQS ->
 Lambda/EC2 (agents) -> DynamoDB + S3 (run history, logs, diffs), with
-Step Functions and CloudWatch for orchestration and observability.
+CloudWatch for observability. The crew needs Docker for its tests and Lambda cannot
+run Docker, so the runner design is still to be decided.
 
 ## Roadmap
 
@@ -47,14 +59,15 @@ Step Functions and CloudWatch for orchestration and observability.
 - [x] **Phase 2:** Planner / Coder / Tester as a LangGraph with a retry loop
 - [x] **Phase 3:** Reviewer + Supervisor, retry and token-budget limits
 - [x] **Phase 4:** Docker sandbox for running tests safely
-- [x] **Phase 5:** evaluation harness (3 tasks, 3 agents, 3-4 runs each)
-- [ ] **Phase 6:** GitHub integration (read issues, open PRs)
+- [x] **Phase 5:** evaluation harness (3 tasks, 3 agents, 10-11 runs each)
+- [x] **Phase 6:** GitHub integration (read issues, open PRs, comment results)
 - [ ] **Phase 7:** AWS serverless deployment and observability
 
-## Results so far
+## Early single-run results (Phases 1-4)
 
-Model: `openai/gpt-oss-120b` via Groq. Each row is a **single run**, so treat the
-numbers as anecdotes until the evaluation harness (Phase 5) runs each task many times.
+Model: `openai/gpt-oss-120b` via Groq. Each row is a **single run**, so treat these
+numbers as anecdotes. The repeated runs are in the [Evaluation](#evaluation)
+section below.
 
 | Task                               | Agent                            | Coder attempts | Steps | Tokens | Result                            |
 | ---------------------------------- | -------------------------------- | -------------- | ----- | ------ | --------------------------------- |
@@ -70,22 +83,27 @@ numbers as anecdotes until the evaluation harness (Phase 5) runs each task many 
   single agent for the same outcome. Multi-agent is not automatically better.
 - The same crew on the same task cost 8.5k tokens in one run and 16.6k in another
   (a failed first attempt followed by a retry), so a single run says little.
+  The Phase 5 runs confirm it: token cost varies a lot between identical runs.
 - In several runs of the validation task, the Planner wrote invalid Python into its
   plan (a parameter without a default after one with a default). The Coder copied
-  it, the first attempt failed, and the Tester-driven retry fixed it. This looks like
-  a systematic weakness of plans that contain code, to be tested in Phase 5.
-- Tests now run in a Docker sandbox (no network, 512 MB memory, 1 CPU, 128 processes,
+  it, the first attempt failed, and the Tester-driven retry fixed it. It showed up
+  again during Phase 5 and the Tester caught it. This looks like a systematic
+  weakness of plans that contain code.
+- Tests run in a Docker sandbox (no network, 512 MB memory, 1 CPU, 128 processes,
   only the target repo mounted). I verified the isolation: a container started with
   `--network none` cannot resolve any hostname.
 - The model call itself can fail: a malformed tool call crashed the whole graph
   until the LLM call was guarded and crashes were turned into results.
 - A bug found on Windows: files must be read and written as UTF-8, or the model's
   special characters raise an encoding error.
+- A harness bug made good runs look bad: the evaluation workspaces had no `.git`,
+  so the Reviewer saw an empty diff and rejected everything. Fixing it changed the
+  numbers completely, so verify measurements before trusting them.
 - The Reviewer was tested on 2 hand-written patches: it approved a clean one and
   rejected a hack that special-cased the tested inputs (`page == 0`, `limit == 101`),
   with accurate reasons. It did not explicitly flag the hardcoded `X-Total-Count`
-  value as a hack. Two samples is too few; a larger set of bad patches is planned
-  for Phase 5.
+  value as a hack. Two samples is too few, and a larger set of bad patches has not
+  been built yet.
 
 ## Evaluation
 
@@ -153,6 +171,58 @@ python phase2_crew.py "Make all tests in tests/test_users.py pass. Invalid page 
 # Phase 3: adds the Reviewer and Supervisor
 python phase3_crew.py "Make all tests in tests/test_users.py pass. Invalid page or limit values must be rejected with 422, and the response must include an X-Total-Count header."
 ```
+
+## GitHub integration
+
+`issue_to_pr.py` turns a GitHub issue on the target repo into a pull request.
+
+**Setup**
+
+1. Create a fine-grained personal access token limited to the target repo
+   (`sample-target-app`), with **Contents**, **Issues** and **Pull requests** set to
+   read and write.
+2. Put it in `.env` as `GITHUB_TOKEN=...`. `.env` is git-ignored; never commit it.
+3. To use a different target repo, set `TARGET_REPO=owner/name` in `.env`.
+
+**Usage**
+
+```bash
+# run the crew on issue 1 locally; nothing is pushed and no PR is opened
+python issue_to_pr.py 1 --dry-run
+
+# run the crew, push a branch, open a PR, and comment the result on the issue
+python issue_to_pr.py 1
+```
+
+**What it does and the safety checks**
+
+- Clones the target repo into a temp directory and works on a new branch named
+  `crew/issue-<n>-<timestamp>`, so your local copy is never touched.
+- Refuses to continue if the tests did not pass, if the crew made no changes, or if
+  anything under `tests/` was modified.
+- Pushes with an `Authorization` header instead of putting the token in the URL, and
+  masks the token in error output.
+- The PR description contains `Closes #<n>` and the run summary (tests passed,
+  reviewer approval, attempts, steps, tokens).
+- `--dry-run` stops before committing, pushing, opening a PR or commenting.
+
+**Example run.** On issue #1 of `sample-target-app` ("Add pagination, validation and
+total count to `GET /users`") the crew finished with tests passing, reviewer approval,
+2 attempts, 15 steps and 22,473 tokens, and opened
+[PR #2](https://github.com/Gourish-Pednekar/sample-target-app/pull/2). I read the diff
+by hand: validation uses `Query(..., ge=1)`, `X-Total-Count` is computed from the data,
+and only `app/main.py` changed. The crew also added a cap of 100 on `limit`, which the
+issue did not ask for. I closed the PR without merging so `main` stays at the failing
+baseline; the solution is kept on branch `crew/issue-1-1792077192`.
+
+## Known limitations
+
+- A passing test run plus a Reviewer approval is not proof the change is correct.
+  Review every PR by hand before merging.
+- Only one issue has been run through the GitHub integration, and the evaluation
+  covers three tasks and one model.
+- The crew is slower and uses more tokens than a single agent on these tasks.
+- The Groq free tier limits runs (about 200K tokens per day for this model).
 
 ## Safety note
 

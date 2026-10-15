@@ -121,6 +121,20 @@ def main() -> None:
     )
     print("Pull request:", url)
 
+    comment = (
+        "issue-crew opened a pull request for this issue.\n\n"
+        f"- Pull request: {url}\n"
+        f"- Tests passed: {result['tests_passed']}\n"
+        f"- Reviewer approved: {result['approved']}\n"
+        f"- Coder attempts: {result['attempts']}\n"
+        f"- LLM steps: {result['steps']}\n"
+        f"- Tokens: {result['tokens']}\n"
+    )
+    try:
+        print("Issue comment:", gh.comment_on_issue(issue["number"], comment))
+    except Exception as exc:
+        print(f"PR was opened, but commenting failed: {exc}")
+
 
 if __name__ == "__main__":
     main()

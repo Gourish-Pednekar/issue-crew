@@ -37,3 +37,9 @@ def list_open_issues() -> list[dict]:
 def create_pull_request(title: str, body: str, head: str, base: str = "main") -> str:
     pr = _repo().create_pull(title=title, body=body, head=head, base=base)
     return pr.html_url
+
+
+
+def comment_on_issue(number: int, body: str) -> str:
+    comment = _repo().get_issue(number).create_comment(body)
+    return comment.html_url
