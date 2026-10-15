@@ -4,8 +4,7 @@ An AI crew that reads a task or a GitHub issue, plans the change, writes the cod
 runs the tests in a Docker sandbox, has the diff reviewed, and opens a pull request.
 Built from scratch to learn agent orchestration, evaluation, and cloud deployment.
 
-> **Status: work in progress.** Phases 1-6 are complete. Phase 7 (AWS deployment)
-> is next. See the roadmap below.
+> **Status: complete.** Phases 1-7 are done
 
 ## Why this project
 
@@ -48,10 +47,21 @@ number of steps, and the multi-agent design is compared against a single agent.
                                  --> comment the result on the issue
 ```
 
-Planned AWS (free-tier) deployment: API Gateway/Lambda (webhook) -> SQS ->
-Lambda/EC2 (agents) -> DynamoDB + S3 (run history, logs, diffs), with
-CloudWatch for observability. The crew needs Docker for its tests and Lambda cannot
-run Docker, so the runner design is still to be decided.
+### Deployment (GitHub Actions)
+
+The crew runs as a manually triggered GitHub Actions workflow
+(`.github/workflows/run-crew.yml`). The runner has Docker, which the sandbox needs,
+and public repositories get free Actions minutes. I considered AWS (API Gateway,
+SQS, Lambda or EC2) but Lambda cannot run Docker, so I picked the simpler free option.
+
+To run it: **Actions -> Run crew on issue -> Run workflow**, enter the issue number,
+and untick **Dry run** to push a branch, open a PR and comment on the issue.
+
+Setup: add two repository secrets, `GROQ_API_KEY` and `CREW_GITHUB_TOKEN` (the
+fine-grained token from the GitHub integration section). The secret is not called
+`GITHUB_TOKEN` because GitHub reserves that prefix; the workflow maps it back.
+The trigger is manual on purpose: an automatic issue trigger would let anyone who
+can open an issue spend the Groq quota and feed text to the agent.
 
 ## Roadmap
 
@@ -61,7 +71,7 @@ run Docker, so the runner design is still to be decided.
 - [x] **Phase 4:** Docker sandbox for running tests safely
 - [x] **Phase 5:** evaluation harness (3 tasks, 3 agents, 10-11 runs each)
 - [x] **Phase 6:** GitHub integration (read issues, open PRs, comment results)
-- [ ] **Phase 7:** AWS serverless deployment and observability
+- [x] **Phase 7:** AWS serverless deployment and observability
 
 ## Early single-run results (Phases 1-4)
 
@@ -223,6 +233,9 @@ baseline; the solution is kept on branch `crew/issue-1-1792077192`.
   covers three tasks and one model.
 - The crew is slower and uses more tokens than a single agent on these tasks.
 - The Groq free tier limits runs (about 200K tokens per day for this model).
+- Deployment is a manual workflow, not a webhook service, and observability is
+  limited to the Actions run logs and the PR and issue comments.
+- Each run is bounded by the Groq free-tier token limits and a 30-minute job timeout.
 
 ## Safety note
 
