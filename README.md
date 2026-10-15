@@ -47,10 +47,9 @@ Step Functions and CloudWatch for orchestration and observability.
 - [x] **Phase 2:** Planner / Coder / Tester as a LangGraph with a retry loop
 - [x] **Phase 3:** Reviewer + Supervisor, retry and token-budget limits
 - [x] **Phase 4:** Docker sandbox for running tests safely
-- [ ] **Phase 5:** evaluation harness (15-20 tasks, several runs each, single vs multi-agent)
+- [x] **Phase 5:** evaluation harness (15-20 tasks, several runs each, single vs multi-agent)
 - [ ] **Phase 6:** GitHub integration (read issues, open PRs)
 - [ ] **Phase 7:** AWS serverless deployment and observability
-- [ ] **Phase 8:** write-up and demo
 
 ## Results so far
 
@@ -87,6 +86,47 @@ numbers as anecdotes until the evaluation harness (Phase 5) runs each task many 
   with accurate reasons. It did not explicitly flag the hardcoded `X-Total-Count`
   value as a hack. Two samples is too few; a larger set of bad patches is planned
   for Phase 5.
+
+## Evaluation
+
+The harness in `eval/` runs each agent on each task several times and appends
+one row per run to `eval/results.csv`.
+
+```
+# run one agent type over all tasks, 3 runs each
+python eval/run_eval.py --agents single --runs 3 --sleep 5
+
+# turn the CSV into markdown tables
+python eval/summarize.py
+```
+
+Tasks: `01-validation`, `02-slugify`, `03-cart-bugs`.
+
+### Results
+
+Model: `openai/gpt-oss-120b`. 3 tasks, 10-11 runs per agent.
+
+| agent  | runs | resolved | approved | mean tokens | token range  | mean steps | mean seconds |
+| ------ | ---- | -------- | -------- | ----------- | ------------ | ---------- | ------------ |
+| single | 11   | 11/11    | -        | 6,609       | 3,842-10,291 | 6.8        | 25           |
+| crew1  | 11   | 11/11    | -        | 10,318      | 5,677-21,224 | 11.3       | 56           |
+| crew2  | 10   | 10/10    | 9/10     | 16,106      | 8,437-34,865 | 13.6       | 84           |
+
+Per-task tables come from `python eval/summarize.py`.
+
+**What this shows**
+
+- Every agent resolved every task and none modified the tests, so on these
+  three tasks success rate does not separate them. The difference is cost.
+- Crew v1 used about 1.6x the tokens of the single agent and Crew v2 about
+  2.4x, and both were slower (2x and 3.4x wall-clock).
+- Variance is large. The same agent on the same task ranged from 9k to 35k
+  tokens (Crew v2 on `02-slugify`), depending on how many attempts and
+  rejections it took.
+- Crew v2's Reviewer rejected one run that passed the tests (`02-slugify`).
+
+**Limits.** Three tasks and a single model are a small sample. These are
+cost and variance observations, not a ranking of the architectures.
 
 ## Quickstart
 
