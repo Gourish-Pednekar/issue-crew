@@ -5,7 +5,7 @@ and has the diff reviewed. The end goal is a crew that reads a GitHub issue and
 opens a pull request. Built from scratch to learn agent orchestration,
 evaluation, and cloud deployment.
 
-> **Status: work in progress.** Phases 1-4 are complete. See the roadmap below.
+> **Status: work in progress.** Phases 1-5 are complete. See the roadmap below.
 
 ## Why this project
 
@@ -47,7 +47,7 @@ Step Functions and CloudWatch for orchestration and observability.
 - [x] **Phase 2:** Planner / Coder / Tester as a LangGraph with a retry loop
 - [x] **Phase 3:** Reviewer + Supervisor, retry and token-budget limits
 - [x] **Phase 4:** Docker sandbox for running tests safely
-- [x] **Phase 5:** evaluation harness (15-20 tasks, several runs each, single vs multi-agent)
+- [x] **Phase 5:** evaluation harness (3 tasks, 3 agents, 3-4 runs each)
 - [ ] **Phase 6:** GitHub integration (read issues, open PRs)
 - [ ] **Phase 7:** AWS serverless deployment and observability
 
